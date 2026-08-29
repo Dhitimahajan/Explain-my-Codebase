@@ -1,6 +1,7 @@
 import os
 import sys
 import io
+import socket
 import webbrowser
 from pathlib import Path
 
@@ -14,9 +15,20 @@ BASE_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = BASE_DIR / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
+def get_local_ip():
+    """Gets the laptop's local WiFi/network IP address for mobile access."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 def main():
     print("=" * 65)
-    print("  🧠 EXPLAIN MY CODEBASE — AI Architecture Visualizer & Copilot")
+    print("  🧠 DATABASE_FINDER_BYDHITI — AI Architecture Visualizer & Copilot")
     print("=" * 65)
     print(f"📁 Project Root: {BASE_DIR}")
     print(f"📦 Backend Path: {BACKEND_DIR}")
@@ -29,24 +41,30 @@ def main():
         print("Please run: pip install -r requirements.txt")
         sys.exit(1)
 
-    url = f"http://{HOST}:{PORT}"
-    print(f"🚀 Starting server at: {url}")
-    print("Press Ctrl+C to stop the server.")
-    print("=" * 65)
+    local_ip = get_local_ip()
+    local_url = f"http://127.0.0.1:{PORT}/database_finder_bydhiti"
+    mobile_url = f"http://{local_ip}:{PORT}/database_finder_bydhiti"
 
-    # Try opening browser after 1.2 seconds
+    print("=" * 65)
+    print(f"💻 LAPTOP BROWSER LINK: {local_url}")
+    print(f"📱 MOBILE PHONE LINK:   {mobile_url}")
+    print("   (Ensure your phone is connected to the same Wi-Fi network)")
+    print("=" * 65)
+    print("Press Ctrl+C to stop the server.\n")
+
+    # Try opening browser after 1.2 seconds on laptop
     try:
         import threading
         def open_browser():
             import time
             time.sleep(1.2)
-            webbrowser.open(url)
+            webbrowser.open(local_url)
         threading.Thread(target=open_browser, daemon=True).start()
     except Exception:
         pass
 
-    # Start FastAPI with Uvicorn
-    uvicorn.run("app.main:app", host=HOST, port=PORT, reload=True, app_dir=str(BACKEND_DIR))
+    # Start FastAPI with Uvicorn on 0.0.0.0 so mobile can access it
+    uvicorn.run("app.main:app", host="0.0.0.0", port=PORT, reload=True, app_dir=str(BACKEND_DIR))
 
 if __name__ == "__main__":
     main()

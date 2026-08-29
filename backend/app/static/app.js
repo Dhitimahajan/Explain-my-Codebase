@@ -24,6 +24,8 @@ const state = {
   repoId: null,
   repoName: null,
   fileTree: null,
+  architecture: null,
+  diagramMode: 'flow', // 'flow' | 'seq'
   activeFilter: 'all',
   searchQuery: '',
   activeFilePath: null,
@@ -55,9 +57,12 @@ const elements = {
   tabCodeView: document.getElementById('tabCodeView'),
   archTitle: document.getElementById('archTitle'),
   archSummary: document.getElementById('archSummary'),
+  archPatternBadge: document.getElementById('archPatternBadge'),
   techStackBadges: document.getElementById('techStackBadges'),
   mermaidContainer: document.getElementById('mermaidContainer'),
   archLayersContainer: document.getElementById('archLayersContainer'),
+  modeFlowBtn: document.getElementById('modeFlowBtn'),
+  modeSeqBtn: document.getElementById('modeSeqBtn'),
   codeViewerBlock: document.getElementById('codeViewerBlock'),
   codeLangBadge: document.getElementById('codeLangBadge'),
   codeLineCount: document.getElementById('codeLineCount'),
@@ -108,6 +113,7 @@ async function analyzeRepository(params) {
     state.repoId = data.repo_id;
     state.repoName = data.repo_name;
     state.fileTree = data.file_tree;
+    state.architecture = data.architecture;
 
     // Update Input field
     if (data.source_url) {
@@ -143,7 +149,7 @@ async function analyzeRepository(params) {
     switchTab('arch');
 
     // Add Copilot notification
-    addBotMessage(`🎉 Successfully ingested **${data.repo_name}**! (${data.total_files} files, ${data.total_loc.toLocaleString()} lines of code).\n\nAsk me anything like *"Where does authentication happen?"*, *"Explain the API architecture"*, or click any file in the left explorer to view its code.`);
+    addBotMessage(`🎉 Successfully analyzed **${data.repo_name}**!\n\nArchitecture Pattern: **${data.architecture.pattern || 'Modular Layered Architecture'}**\n\nExplore the interactive **System Map** or **Sequence Trace** diagrams in the center panel, filter modules on the left, or ask any question!`);
 
   } catch (err) {
     alert(`Error: ${err.message}`);
@@ -161,6 +167,14 @@ async function renderArchitecture(arch) {
   elements.archTitle.textContent = arch.title || 'System Architecture Overview';
   elements.archSummary.innerHTML = marked.parse(arch.summary || '');
 
+  // Pattern Badge
+  if (arch.pattern) {
+    elements.archPatternBadge.textContent = arch.pattern;
+    elements.archPatternBadge.classList.remove('hidden');
+  } else {
+    elements.archPatternBadge.classList.add('hidden');
+  }
+
   // Tech Stack Badges
   elements.techStackBadges.innerHTML = '';
   (arch.tech_stack || []).forEach((tech) => {
@@ -170,36 +184,63 @@ async function renderArchitecture(arch) {
     elements.techStackBadges.appendChild(badge);
   });
 
-  // Mermaid Diagram
-  if (arch.mermaid_diagram) {
-    let cleanDiagram = (arch.mermaid_diagram || "").trim();
-    cleanDiagram = cleanDiagram.replace(/^```mermaid\s*/i, '').replace(/```$/i, '').trim();
-
-    try {
-      const renderId = 'mermaid-arch-' + Math.floor(Math.random() * 10000);
-      const { svg } = await mermaid.render(renderId, cleanDiagram);
-      elements.mermaidContainer.innerHTML = svg;
-    } catch (e) {
-      console.warn('Mermaid render issue:', e);
-      elements.mermaidContainer.innerHTML = `<pre class="text-xs text-slate-300 font-mono bg-dark-950 p-4 rounded-lg overflow-auto border border-dark-700">${cleanDiagram}</pre>`;
-    }
-  }
+  // Render Diagram according to current mode
+  await renderActiveDiagram();
 
   // Key Layers Breakdown
   elements.archLayersContainer.innerHTML = '';
   (arch.key_layers || []).forEach((layer) => {
     const card = document.createElement('div');
-    card.className = 'bg-dark-900/90 border border-dark-700/80 rounded-xl p-4 hover:border-indigo-500/40 transition';
+    card.className = 'bg-dark-900/90 border border-dark-700/80 rounded-xl p-4 hover:border-indigo-500/40 transition flex flex-col justify-between';
     card.innerHTML = `
-      <div class="flex items-center space-x-2 mb-2">
-        <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
-        <h4 class="text-xs font-bold text-white uppercase tracking-wider">${layer.layer}</h4>
+      <div>
+        <div class="flex items-center space-x-2 mb-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+          <h4 class="text-xs font-bold text-white uppercase tracking-wider">${layer.layer}</h4>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">${layer.description}</p>
       </div>
-      <p class="text-xs text-slate-400 leading-relaxed">${layer.description}</p>
     `;
     elements.archLayersContainer.appendChild(card);
   });
 }
+
+// Render Diagram according to mode ('flow' | 'seq')
+async function renderActiveDiagram() {
+  if (!state.architecture) return;
+
+  const arch = state.architecture;
+  let code = state.diagramMode === 'seq' && arch.sequence_diagram ? arch.sequence_diagram : arch.mermaid_diagram;
+
+  if (!code) return;
+
+  let cleanDiagram = code.trim();
+  cleanDiagram = cleanDiagram.replace(/^```mermaid\s*/i, '').replace(/```$/i, '').trim();
+
+  try {
+    const renderId = 'mermaid-main-' + Math.floor(Math.random() * 10000);
+    const { svg } = await mermaid.render(renderId, cleanDiagram);
+    elements.mermaidContainer.innerHTML = svg;
+  } catch (e) {
+    console.warn('Mermaid render issue:', e);
+    elements.mermaidContainer.innerHTML = `<pre class="text-xs text-slate-300 font-mono bg-dark-950 p-4 rounded-lg overflow-auto border border-dark-700 max-w-full">${cleanDiagram}</pre>`;
+  }
+}
+
+// Diagram Mode Toggles
+elements.modeFlowBtn.addEventListener('click', async () => {
+  state.diagramMode = 'flow';
+  elements.modeFlowBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition';
+  elements.modeSeqBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-white transition';
+  await renderActiveDiagram();
+});
+
+elements.modeSeqBtn.addEventListener('click', async () => {
+  state.diagramMode = 'seq';
+  elements.modeSeqBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition';
+  elements.modeFlowBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-white transition';
+  await renderActiveDiagram();
+});
 
 // Render File Tree Explorer
 function renderFileTree() {
@@ -550,7 +591,7 @@ elements.sampleSelect.addEventListener('change', (e) => {
   const sampleKey = e.target.value;
   if (sampleKey) {
     analyzeRepository({ sample_key: sampleKey });
-    elements.sampleSelect.value = ""; // reset for next pick
+    elements.sampleSelect.value = "";
   }
 });
 

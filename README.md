@@ -115,20 +115,5 @@ http://localhost:8000
    - *"Trace the lifecycle of an incoming API request."*
 6. Click any **file citation badge** (e.g. `[app/routers/auth.py:12-45]`) to jump straight to that line in the **Code Viewer**!
 
----
-
-## 💼 Resume & Portfolio Pitch
-
-```text
-Explain My Codebase | Fullstack AI Developer Tool
-Tech Stack: Python, FastAPI, Anthropic Claude 3.5 Sonnet, Vector RAG (BM25 + Dense Embeddings), Mermaid.js, Tailwind CSS
-• Built a fullstack AI codebase intelligence engine that clones, parses ASTs, and indexes multi-language repositories in <10 seconds.
-• Developed a RAG pipeline utilizing Reciprocal Rank Fusion (RRF) and Claude 3.5 Sonnet to trace complex cross-module execution flows with precise file:line citations.
-• Designed automated system architecture mapping that extracts module hierarchies (Frontend, Backend, Auth, DB) and generates dynamic Mermaid.js flow diagrams.
-• Implemented a zero-latency interactive dashboard with collapsible module trees, live code viewing, and contextual AI chat.
-```
-
----
-
 ## 📄 License
 MIT License. Open source and free to customize.

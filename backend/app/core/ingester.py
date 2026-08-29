@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from app.config import REPOS_DIR, MAX_FILE_SIZE_KB
+from app.config import REPOS_DIR
 
 # Extensions recognized by language category
 LANGUAGE_MAP = {
@@ -36,7 +36,6 @@ LANGUAGE_MAP = {
     ".html": "HTML",
     ".css": "CSS",
     ".scss": "SCSS",
-    ".sass": "SASS",
     ".vue": "Vue",
     ".svelte": "Svelte",
     ".json": "JSON",
@@ -45,14 +44,16 @@ LANGUAGE_MAP = {
     ".toml": "TOML",
     ".md": "Markdown",
     ".sh": "Shell Script",
-    ".bash": "Bash Script",
     ".dockerfile": "Dockerfile",
 }
 
+# Directories to skip completely for high speed
 IGNORED_DIRS = {
     ".git", "node_modules", "dist", "build", "out", ".next", ".nuxt", "__pycache__",
     ".venv", "venv", "env", ".pytest_cache", ".idea", ".vscode", "target",
-    "bin", "obj", "vendor", ".turbo", ".husky", ".cargo", "coverage", ".cache"
+    "bin", "obj", "vendor", ".turbo", ".husky", ".cargo", "coverage", ".cache",
+    "docs", "documentation", "site", "fixtures", "tests/fixtures", "test_data",
+    "testdata", "datasets", "tmp", "temp", "third_party", "pods", "site-packages"
 }
 
 IGNORED_FILES = {
@@ -65,8 +66,11 @@ IGNORED_EXTENSIONS = {
     ".svg", ".ico", ".webp", ".pdf", ".zip", ".tar", ".gz", ".exe",
     ".dll", ".so", ".dylib", ".woff", ".woff2", ".ttf", ".eot",
     ".mp4", ".mp3", ".mov", ".avi", ".pyc", ".pyo", ".pyd", ".class",
-    ".jar", ".war", ".lock"
+    ".jar", ".war", ".lock", ".csv", ".tsv", ".parquet", ".db", ".sqlite"
 }
+
+MAX_FILES_TO_SCAN = 250
+MAX_FILE_SIZE_KB = 150  # source code files are almost always < 150KB
 
 
 def _remove_readonly(func, path, excinfo):
@@ -100,7 +104,7 @@ def sanitize_repo_name(url_or_name: str) -> str:
 
 
 def clone_github_repo(repo_url: str) -> Path:
-    """Clones a GitHub repository shallowly (--depth 1)."""
+    """Clones a GitHub repository shallowly and quickly (--depth 1, --no-tags)."""
     clean_url = repo_url.strip().rstrip("/")
     if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
         if "/" in clean_url and not clean_url.startswith("github.com/"):
@@ -113,7 +117,7 @@ def clone_github_repo(repo_url: str) -> Path:
     repo_id = sanitize_repo_name(clean_url)
     target_dir = REPOS_DIR / repo_id
 
-    # If already cloned recently, return path
+    # If already cloned recently and has files, return immediately
     if target_dir.exists() and any(target_dir.iterdir()):
         return target_dir
 
@@ -121,26 +125,36 @@ def clone_github_repo(repo_url: str) -> Path:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     git_url = f"{clean_url}.git" if not clean_url.endswith(".git") else clean_url
+    git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 
-    cmd = ["git", "clone", "--depth", "1", git_url, str(target_dir)]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        # Retry with clean URL without .git suffix
-        if git_url != clean_url:
-            cmd2 = ["git", "clone", "--depth", "1", clean_url, str(target_dir)]
-            res2 = subprocess.run(cmd2, capture_output=True, text=True)
-            if res2.returncode != 0:
-                raise RuntimeError(f"Git clone failed: {res2.stderr or res.stderr}")
-        else:
-            raise RuntimeError(f"Git clone failed: {res.stderr}")
+    cmd = [
+        "git", "clone",
+        "--depth", "1",
+        "--single-branch",
+        "--no-tags",
+        git_url,
+        str(target_dir)
+    ]
+
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, env=git_env, timeout=30)
+        if res.returncode != 0:
+            if git_url != clean_url:
+                cmd2 = ["git", "clone", "--depth", "1", "--single-branch", "--no-tags", clean_url, str(target_dir)]
+                res2 = subprocess.run(cmd2, capture_output=True, text=True, env=git_env, timeout=30)
+                if res2.returncode != 0:
+                    raise RuntimeError(f"Git clone failed: {res2.stderr or res.stderr}")
+            else:
+                raise RuntimeError(f"Git clone failed: {res.stderr}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Git clone timed out after 30 seconds. Please check the repository URL or connection.")
 
     return target_dir
 
 
 def scan_repository(repo_path: Path) -> Dict[str, Any]:
     """
-    Scans a repository directory, filters out noise/binaries,
-    and returns a structured list of code files with LOC & language breakdown.
+    Scans repository directory quickly, prioritizing source code files.
     """
     code_files: List[Dict[str, Any]] = []
     language_counts: Dict[str, int] = {}
@@ -148,13 +162,18 @@ def scan_repository(repo_path: Path) -> Dict[str, Any]:
 
     for root, dirs, files in os.walk(repo_path):
         # In-place filter ignored directories
-        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS and not d.startswith(".")]
+        dirs[:] = [
+            d for d in dirs 
+            if d.lower() not in IGNORED_DIRS and not d.startswith(".")
+        ]
 
         for file_name in files:
+            if len(code_files) >= MAX_FILES_TO_SCAN:
+                break
+
             lower_name = file_name.lower()
-            if lower_name in IGNORED_FILES or file_name.startswith("."):
-                if file_name not in (".env.example", ".dockerignore", ".gitignore"):
-                    continue
+            if lower_name in IGNORED_FILES or (file_name.startswith(".") and file_name not in (".env.example", ".dockerignore", ".gitignore")):
+                continue
 
             # Check ignored extensions
             if any(lower_name.endswith(ext) for ext in IGNORED_EXTENSIONS):
@@ -172,6 +191,9 @@ def scan_repository(repo_path: Path) -> Dict[str, Any]:
                     ext = ".dockerfile"
 
                 language = LANGUAGE_MAP.get(ext, "Other")
+                if language == "Other" and ext not in (".md", ".txt", ".env"):
+                    continue
+
                 rel_path = full_path.relative_to(repo_path).as_posix()
 
                 try:
@@ -197,6 +219,9 @@ def scan_repository(repo_path: Path) -> Dict[str, Any]:
                 })
             except Exception:
                 continue
+
+        if len(code_files) >= MAX_FILES_TO_SCAN:
+            break
 
     # Sort files alphabetically by path
     code_files.sort(key=lambda x: x["path"])

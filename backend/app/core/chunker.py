@@ -1,7 +1,6 @@
 import re
 from typing import List, Dict, Any
 
-# Regex patterns for detecting function and class boundaries across languages
 SYMBOL_PATTERNS = [
     # Python
     (r"^(?:async\s+)?def\s+([a-zA-Z0-9_]+)\s*\(", "function"),
@@ -21,10 +20,12 @@ SYMBOL_PATTERNS = [
     # Java / C# / C++
     (r"^(?:public|private|protected|static|final|native|synchronized|abstract|\s)+[\w<>\[\]]+\s+([a-zA-Z0-9_]+)\s*\(", "method"),
     (r"^(?:public|private|protected)?\s*(?:class|struct)\s+([a-zA-Z0-9_]+)", "class"),
-    # API route handlers (Express, FastAPI, Flask, Gin)
+    # API route handlers
     (r"@(app|router|api)\.(get|post|put|delete|patch|options|route)\s*\(\s*[\"']([^\"']+)[\"']", "route"),
     (r"(?:router|app)\.(get|post|put|delete|patch|use)\s*\(\s*[\"']([^\"']+)[\"']", "route"),
 ]
+
+MAX_TOTAL_CHUNKS = 300
 
 
 def detect_symbol(line: str) -> str:
@@ -41,7 +42,7 @@ def detect_symbol(line: str) -> str:
 
 def chunk_code_file(
     file_info: Dict[str, Any],
-    max_lines_per_chunk: int = 60,
+    max_lines_per_chunk: int = 70,
     overlap_lines: int = 10
 ) -> List[Dict[str, Any]]:
     """
@@ -57,7 +58,7 @@ def chunk_code_file(
         return []
 
     # If small file, return single chunk
-    if total_lines <= max_lines_per_chunk + 15:
+    if total_lines <= max_lines_per_chunk + 20:
         return [{
             "chunk_id": f"{file_path}:1-{total_lines}",
             "file_path": file_path,
@@ -66,7 +67,7 @@ def chunk_code_file(
             "end_line": total_lines,
             "symbol": detect_symbol(lines[0]) if lines else "",
             "content": content,
-            "preview": f"File {file_path} (Lines 1-{total_lines})",
+            "preview": f"{file_path}:1-{total_lines}",
         }]
 
     chunks: List[Dict[str, Any]] = []
@@ -75,22 +76,12 @@ def chunk_code_file(
     while current_start < total_lines:
         current_end = min(current_start + max_lines_per_chunk, total_lines)
 
-        # Try to find natural boundary if we're not at the very end
-        if current_end < total_lines:
-            lookahead_range = range(current_end, max(current_start + 20, current_end - 15), -1)
-            for candidate_line in lookahead_range:
-                if candidate_line < len(lines):
-                    line_text = lines[candidate_line].strip()
-                    if line_text == "" or line_text.startswith(("#", "//", "/*", "*/", "def ", "class ", "func ", "export ")):
-                        current_end = candidate_line
-                        break
-
         chunk_lines = lines[current_start:current_end]
         chunk_content = "\n".join(chunk_lines)
 
         # Detect primary symbols inside this chunk
         detected_symbols = []
-        for line in chunk_lines:
+        for line in chunk_lines[:15]:
             sym = detect_symbol(line)
             if sym and sym not in detected_symbols:
                 detected_symbols.append(sym)
@@ -108,22 +99,23 @@ def chunk_code_file(
             "end_line": end_line_1idx,
             "symbol": primary_symbol,
             "content": chunk_content,
-            "preview": f"{file_path}:{start_line_1idx}-{end_line_1idx} ({primary_symbol})",
+            "preview": f"{file_path}:{start_line_1idx}-{end_line_1idx}",
         })
 
         if current_end >= total_lines:
             break
 
-        # Step forward with overlap
         current_start = max(current_start + 1, current_end - overlap_lines)
 
     return chunks
 
 
 def chunk_all_files(code_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Chunks all scanned repository code files."""
+    """Chunks all scanned repository code files with a safety cap for instant performance."""
     all_chunks: List[Dict[str, Any]] = []
     for file in code_files:
+        if len(all_chunks) >= MAX_TOTAL_CHUNKS:
+            break
         chunks = chunk_code_file(file)
         all_chunks.extend(chunks)
-    return all_chunks
+    return all_chunks[:MAX_TOTAL_CHUNKS]

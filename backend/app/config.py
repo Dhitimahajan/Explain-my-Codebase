@@ -21,8 +21,8 @@ REPOS_DIR.mkdir(parents=True, exist_ok=True)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
-# Server Settings
-HOST = os.getenv("HOST", "127.0.0.1")
+# Server Settings: Bind to 0.0.0.0 so both laptop and mobile on the same WiFi can access it
+HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "t")
 
