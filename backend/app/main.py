@@ -1,5 +1,12 @@
 import os
+import sys
 from pathlib import Path
+
+# Ensure backend directory is in sys.path so 'app.*' imports work from anywhere (Vercel, local root, etc.)
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,8 +18,8 @@ from app.api.routes_chat import router as chat_router
 from app.core.llm_service import llm_service
 
 app = FastAPI(
-    title="database_finder_bydhiti API",
-    description="AI-Powered GitHub Repository Visualizer & Architecture Copilot by Dhiti",
+    title="Explain My Codebase API",
+    description="AI-Powered GitHub Repository Visualizer & Architecture Copilot",
     version="1.0.0",
 )
 
@@ -35,7 +42,7 @@ async def get_system_status():
     """Returns the current system health and AI provider configuration."""
     return {
         "status": "healthy",
-        "app_name": "database_finder_bydhiti",
+        "app_name": "Explain My Codebase",
         "ai_provider": llm_service.active_provider,
         "is_configured": llm_service.is_configured,
         "cached_repos_count": len(REPO_CACHE),
@@ -50,14 +57,14 @@ if STATIC_DIR.exists():
 
     @app.get("/")
     async def serve_root():
-        return RedirectResponse(url="/database_finder_bydhiti")
+        return FileResponse(str(STATIC_DIR / "index.html"))
 
     @app.get("/database_finder_bydhiti")
-    async def serve_custom_endpoint():
-        return FileResponse(str(STATIC_DIR / "index.html"))
+    async def serve_legacy_redirect():
+        return RedirectResponse(url="/")
 
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"🚀 Starting database_finder_bydhiti server on http://{HOST}:{PORT}/database_finder_bydhiti")
+    print(f"🚀 Starting Explain My Codebase server on http://{HOST}:{PORT}")
     uvicorn.run("app.main:app", host=HOST, port=PORT, reload=DEBUG)

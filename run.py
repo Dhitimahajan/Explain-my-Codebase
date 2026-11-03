@@ -28,7 +28,7 @@ def get_local_ip():
 
 def main():
     print("=" * 65)
-    print("  🧠 DATABASE_FINDER_BYDHITI — AI Architecture Visualizer & Copilot")
+    print("  🧠 EXPLAIN MY CODEBASE — AI Architecture Visualizer & Copilot")
     print("=" * 65)
     print(f"📁 Project Root: {BASE_DIR}")
     print(f"📦 Backend Path: {BACKEND_DIR}")
@@ -42,13 +42,13 @@ def main():
         sys.exit(1)
 
     local_ip = get_local_ip()
-    local_url = f"http://127.0.0.1:{PORT}/database_finder_bydhiti"
-    mobile_url = f"http://{local_ip}:{PORT}/database_finder_bydhiti"
+    local_url = f"http://127.0.0.1:{PORT}"
+    mobile_url = f"http://{local_ip}:{PORT}"
 
     print("=" * 65)
-    print(f"💻 LAPTOP BROWSER LINK: {local_url}")
-    print(f"📱 MOBILE PHONE LINK:   {mobile_url}")
-    print("   (Ensure your phone is connected to the same Wi-Fi network)")
+    print(f"💻 LOCAL BROWSER LINK:  {local_url}")
+    print(f"📱 NETWORK / MOBILE:   {mobile_url}")
+    print("   (Ensure your devices are connected to the same Wi-Fi network)")
     print("=" * 65)
     print("Press Ctrl+C to stop the server.\n")
 
@@ -63,7 +63,7 @@ def main():
     except Exception:
         pass
 
-    # Start FastAPI with Uvicorn on 0.0.0.0 so mobile can access it
+    # Start FastAPI with Uvicorn on 0.0.0.0 so network can access it
     uvicorn.run("app.main:app", host="0.0.0.0", port=PORT, reload=True, app_dir=str(BACKEND_DIR))
 
 if __name__ == "__main__":

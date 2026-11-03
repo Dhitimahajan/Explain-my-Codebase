@@ -7,7 +7,12 @@ try:
 except ImportError:
     anthropic = None
 
-from app.config import ANTHROPIC_API_KEY
+try:
+    import openai
+except ImportError:
+    openai = None
+
+from app.config import ANTHROPIC_API_KEY, OPENAI_API_KEY
 
 
 class LLMService:
@@ -17,17 +22,28 @@ class LLMService:
     """
 
     def __init__(self):
-        self.anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if (ANTHROPIC_API_KEY and anthropic) else None
+        self.anthropic_client = (
+            anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            if (ANTHROPIC_API_KEY and anthropic)
+            else None
+        )
+        self.openai_client = (
+            openai.OpenAI(api_key=OPENAI_API_KEY)
+            if (OPENAI_API_KEY and openai)
+            else None
+        )
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.anthropic_client)
+        return bool(self.anthropic_client or self.openai_client)
 
     @property
     def active_provider(self) -> str:
         if self.anthropic_client:
             return "Claude 3.5 Sonnet (Anthropic)"
-        return "Built-in Architectural Engine (Add Claude Key for AI chat)"
+        if self.openai_client:
+            return "GPT-4o (OpenAI)"
+        return "Local Architectural Engine (Active)"
 
     def generate_architecture_overview(
         self,
@@ -298,18 +314,19 @@ class LLMService:
 
         context_str = "\n\n".join(context_snippets)
 
-        if self.anthropic_client:
-            try:
-                system_prompt = f"""
-You are an expert Senior Staff Software Engineer and Codebase Guide for '{repo_name}'.
+        system_prompt = f"""You are an expert Senior Staff Software Engineer and Codebase Guide for '{repo_name}'.
 Explain the code flow accurately based on the provided context chunks.
 
 Formatting Rules:
 1. **Direct Answer**: Provide a concise answer identifying which module is responsible.
 2. **Step-by-Step Flow**: Break down the control flow across files from entry to output.
-3. **Citations**: Whenever referencing code, use `[path:start_line-end_line]` (e.g. `[popup.js:12-45]`).
+3. **Citations**: Whenever referencing code, use `[path:start_line-end_line]` (e.g. `[src/auth/jwt.py:12-45]`).
 4. **Flowchart**: Include a ```mermaid sequenceDiagram or graph TD block.
 """
+
+        # 1. Try Anthropic Claude 3.5 Sonnet if configured
+        if self.anthropic_client:
+            try:
                 resp = self.anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
                     max_tokens=2000,
@@ -321,6 +338,26 @@ Formatting Rules:
                     "answer": resp.content[0].text,
                     "citations": citations,
                     "provider": "Claude 3.5 Sonnet",
+                }
+            except Exception:
+                pass
+
+        # 2. Try OpenAI GPT-4o if configured
+        if self.openai_client:
+            try:
+                completion = self.openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Retrieved Chunks:\n{context_str}\n\nQuestion: {query}"}
+                    ],
+                    max_tokens=2000,
+                    timeout=15.0
+                )
+                return {
+                    "answer": completion.choices[0].message.content,
+                    "citations": citations,
+                    "provider": "GPT-4o (OpenAI)",
                 }
             except Exception:
                 pass
@@ -340,7 +377,7 @@ Formatting Rules:
                 "answer": (
                     f"### 🔍 Analysis for: '{query}'\n\n"
                     f"No direct code matches were found in `{repo_name}` for this search term. "
-                    "Try querying specific architectural modules like **authentication**, **popup UI**, **background scripts**, or **API routes**."
+                    "Try querying specific architectural modules like **authentication**, **API routes**, **models**, or **middleware**."
                 ),
                 "citations": [],
                 "provider": "Local Architectural Engine",
@@ -351,19 +388,27 @@ Formatting Rules:
         top_filename = top_chunk['file_path'].split('/')[-1]
         second_filename = files_mentioned[1].split('/')[-1] if len(files_mentioned) > 1 else "Handler"
 
-        answer_md = f"""### 🎯 Overview
+        file_bullets = []
+        for f in files_mentioned[:4]:
+            matching = [c for c in retrieved_chunks if c['file_path'] == f]
+            if matching:
+                s = matching[0]['start_line']
+                e = matching[0]['end_line']
+                file_bullets.append(f"- 📄 `[{f}:{s}-{e}]`")
 
-In **`{repo_name}`**, logic related to **"{query}"** is anchored across these primary files:
-{chr(10).join([f"- 📄 `[{f}:{next(c['start_line'] for c in retrieved_chunks if c['file_path'] == f)}-{next(c['end_line'] for c in retrieved_chunks if c['file_path'] == f)}]`" for f in files_mentioned[:4]])}
+        answer_md = f"""### 🎯 Architectural Overview
+
+In **`{repo_name}`**, logic relevant to **"{query}"** is anchored in these primary files:
+{chr(10).join(file_bullets)}
 
 ---
 
 ### 📜 Execution & Control Flow
 
-1. **Entry Point & Handler**:
-   Logic is initialized in `[{top_chunk['file_path']}:{top_chunk['start_line']}-{top_chunk['end_line']}]` ({top_chunk.get('symbol', 'Core Module')}).
-2. **State & Processing**:
-   Data parameters and event messages are dispatched and handled across `{files_mentioned[1] if len(files_mentioned) > 1 else files_mentioned[0]}`.
+1. **Entry Point & Initialization**:
+   Incoming execution flows through `[{top_chunk['file_path']}:{top_chunk['start_line']}-{top_chunk['end_line']}]` ({top_chunk.get('symbol') or 'Primary Module'}).
+2. **State & Dispatch**:
+   Parameters and handlers coordinate across `{files_mentioned[1] if len(files_mentioned) > 1 else files_mentioned[0]}` to execute the relevant business operations.
 
 ---
 
@@ -372,20 +417,15 @@ In **`{repo_name}`**, logic related to **"{query}"** is anchored across these pr
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as 👤 User / Client
-    participant Component as 📄 {top_filename}
-    participant Backend as ⚙️ {second_filename}
+    actor Client as 👤 Client / Caller
+    participant Handler as 📄 {top_filename}
+    participant Core as ⚙️ {second_filename}
     
-    User->>Component: Trigger "{query}"
-    Component->>Backend: Process Parameters & State
-    Backend-->>Component: Return Execution Status
-    Component-->>User: Update View / UI Output
+    Client->>Handler: Trigger operation ("{query}")
+    Handler->>Core: Forward context & dispatch logic
+    Core-->>Handler: Return execution response
+    Handler-->>Client: Final result & status
 ```
-
----
-
-> [!TIP]
-> 💡 *Add your `ANTHROPIC_API_KEY` in `.env` to unlock continuous multi-turn Claude 3.5 Sonnet reasoning!*
 """
 
         return {

@@ -1,20 +1,20 @@
-/**
+﻿/**
  * Explain My Codebase — Frontend Controller
  */
 
-// Initialize Mermaid with Dark Theme
+// Initialize Mermaid with clean neutral theme
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'dark',
+  theme: 'neutral',
   themeVariables: {
-    darkMode: true,
-    background: '#0c1017',
-    primaryColor: '#4f46e5',
-    primaryTextColor: '#f8fafc',
-    primaryBorderColor: '#6366f1',
-    lineColor: '#818cf8',
-    secondaryColor: '#182030',
-    tertiaryColor: '#111622',
+    primaryColor: '#EBF2ED',
+    primaryTextColor: '#1C1F1D',
+    primaryBorderColor: '#4A6B56',
+    lineColor: '#4A6B56',
+    secondaryColor: '#F5F4EE',
+    tertiaryColor: '#FFFFFF',
+    fontFamily: 'Inter, -apple-system, sans-serif',
+    fontSize: '12px',
   },
   securityLevel: 'loose',
 });
@@ -35,8 +35,12 @@ const state = {
 
 // DOM Elements
 const elements = {
+  landingView: document.getElementById('landingView'),
+  workspaceView: document.getElementById('workspaceView'),
+  topSearchBar: document.getElementById('topSearchBar'),
+  heroRepoInput: document.getElementById('heroRepoInput'),
+  heroAnalyzeBtn: document.getElementById('heroAnalyzeBtn'),
   repoInput: document.getElementById('repoInput'),
-  sampleSelect: document.getElementById('sampleSelect'),
   analyzeBtn: document.getElementById('analyzeBtn'),
   loadingOverlay: document.getElementById('loadingOverlay'),
   loadingTitle: document.getElementById('loadingTitle'),
@@ -76,18 +80,51 @@ const elements = {
   clearChatBtn: document.getElementById('clearChatBtn'),
   suggestedChips: document.getElementById('suggestedChips'),
   retrievalStatus: document.getElementById('retrievalStatus'),
+  toastContainer: document.getElementById('toastContainer'),
 };
+
+// Toast Notifications
+function showToast(message, type = 'info') {
+  if (!elements.toastContainer) return;
+  const toast = document.createElement('div');
+  const bg = type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-surface border-border text-charcoal';
+  toast.className = `toast pointer-events-auto flex items-center space-x-2 px-3.5 py-2.5 rounded-xl border shadow-md text-xs font-medium ${bg}`;
+  
+  const iconName = type === 'error' ? 'alert-circle' : 'check-circle-2';
+  toast.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 shrink-0"></i><span>${message}</span>`;
+  
+  elements.toastContainer.appendChild(toast);
+  if (window.lucide) lucide.createIcons();
+
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+// Show/Hide Loading
+function showLoading(title, subtitle) {
+  if (title) elements.loadingTitle.textContent = title;
+  if (subtitle) elements.loadingSubtitle.textContent = subtitle;
+  elements.loadingOverlay.classList.remove('hidden');
+}
+
+function hideLoading() {
+  elements.loadingOverlay.classList.add('hidden');
+}
 
 // Check System Status on Load
 async function checkSystemStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    if (data.ai_provider) {
+    if (data.ai_provider && elements.aiProviderName) {
       elements.aiProviderName.textContent = data.ai_provider;
     }
   } catch (err) {
-    console.error('Status check failed', err);
+    console.warn('Status check failed', err);
   }
 }
 
@@ -95,7 +132,7 @@ async function checkSystemStatus() {
 async function analyzeRepository(params) {
   if (state.isProcessing) return;
   state.isProcessing = true;
-  showLoading('Ingesting & Analyzing Repository...', 'Cloning repository, categorizing architectural layers, and indexing vectors...');
+  showLoading('Analyzing Repository...', 'Parsing AST, categorizing architectural layers, and indexing vectors...');
 
   try {
     const res = await fetch('/api/repo/ingest', {
@@ -115,12 +152,17 @@ async function analyzeRepository(params) {
     state.fileTree = data.file_tree;
     state.architecture = data.architecture;
 
-    // Update Input field
+    // Transition views
+    elements.landingView.classList.add('hidden');
+    elements.workspaceView.classList.remove('hidden');
+    elements.topSearchBar.classList.remove('hidden');
+
     if (data.source_url) {
       elements.repoInput.value = data.source_url;
+      elements.heroRepoInput.value = data.source_url;
     }
 
-    // Render Stats
+    // Render Stats Bar
     elements.repoStatsBar.classList.remove('hidden');
     elements.statsRepoName.textContent = data.repo_name;
     elements.statsFiles.textContent = `${data.total_files.toLocaleString()} files`;
@@ -131,28 +173,20 @@ async function analyzeRepository(params) {
     elements.statsLanguages.innerHTML = '';
     (data.languages || []).slice(0, 4).forEach((lang) => {
       const pill = document.createElement('span');
-      pill.className = 'text-[11px] px-2 py-0.5 rounded-full bg-dark-800 border border-dark-700 text-slate-300 flex items-center space-x-1';
-      pill.innerHTML = `<span>${lang.language}</span> <span class="text-indigo-400 font-semibold">${lang.percentage}%</span>`;
+      pill.className = 'text-[11px] px-2 py-0.5 rounded-full bg-surface border border-border text-charcoal-muted flex items-center space-x-1';
+      pill.innerHTML = `<span>${lang.language}</span> <span class="text-sage font-semibold">${lang.percentage}%</span>`;
       elements.statsLanguages.appendChild(pill);
     });
 
-    // Render File Tree
+    // Render Components
     renderFileTree();
-
-    // Render Architecture Tab
     await renderArchitecture(data.architecture);
-
-    // Render Suggested Questions
     renderSuggestedQuestions(data.suggested_questions);
-
-    // Switch to Architecture tab
     switchTab('arch');
 
-    // Add Copilot notification
-    addBotMessage(`🎉 Successfully analyzed **${data.repo_name}**!\n\nArchitecture Pattern: **${data.architecture.pattern || 'Modular Layered Architecture'}**\n\nExplore the interactive **System Map** or **Sequence Trace** diagrams in the center panel, filter modules on the left, or ask any question!`);
-
+    showToast(`Successfully analyzed ${data.repo_name}`);
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    showToast(err.message, 'error');
   } finally {
     hideLoading();
     state.isProcessing = false;
@@ -160,14 +194,13 @@ async function analyzeRepository(params) {
   }
 }
 
-// Render Architecture Overview & Mermaid Diagram
+// Render Architecture
 async function renderArchitecture(arch) {
   if (!arch) return;
 
   elements.archTitle.textContent = arch.title || 'System Architecture Overview';
   elements.archSummary.innerHTML = marked.parse(arch.summary || '');
 
-  // Pattern Badge
   if (arch.pattern) {
     elements.archPatternBadge.textContent = arch.pattern;
     elements.archPatternBadge.classList.remove('hidden');
@@ -175,70 +208,64 @@ async function renderArchitecture(arch) {
     elements.archPatternBadge.classList.add('hidden');
   }
 
-  // Tech Stack Badges
+  // Tech stack pills
   elements.techStackBadges.innerHTML = '';
   (arch.tech_stack || []).forEach((tech) => {
     const badge = document.createElement('span');
-    badge.className = 'text-xs font-semibold px-2 py-1 rounded-md bg-indigo-950/80 text-indigo-300 border border-indigo-500/30';
+    badge.className = 'text-xs font-medium px-2 py-0.5 rounded-md bg-sage-subtle text-sage border border-sage-border';
     badge.textContent = tech;
     elements.techStackBadges.appendChild(badge);
   });
 
-  // Render Diagram according to current mode
   await renderActiveDiagram();
 
-  // Key Layers Breakdown
+  // Layers breakdown
   elements.archLayersContainer.innerHTML = '';
   (arch.key_layers || []).forEach((layer) => {
     const card = document.createElement('div');
-    card.className = 'bg-dark-900/90 border border-dark-700/80 rounded-xl p-4 hover:border-indigo-500/40 transition flex flex-col justify-between';
+    card.className = 'bg-surface border border-border rounded-xl p-3.5 shadow-sm space-y-1.5';
     card.innerHTML = `
-      <div>
-        <div class="flex items-center space-x-2 mb-2">
-          <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-          <h4 class="text-xs font-bold text-white uppercase tracking-wider">${layer.layer}</h4>
-        </div>
-        <p class="text-xs text-slate-400 leading-relaxed">${layer.description}</p>
+      <div class="flex items-center space-x-2">
+        <span class="w-2 h-2 rounded-full bg-sage"></span>
+        <h4 class="text-xs font-semibold text-charcoal">${layer.layer}</h4>
       </div>
+      <p class="text-xs text-charcoal-muted leading-relaxed">${layer.description}</p>
     `;
     elements.archLayersContainer.appendChild(card);
   });
 }
 
-// Render Diagram according to mode ('flow' | 'seq')
+// Render Active Diagram (Flow vs Seq)
 async function renderActiveDiagram() {
   if (!state.architecture) return;
-
   const arch = state.architecture;
   let code = state.diagramMode === 'seq' && arch.sequence_diagram ? arch.sequence_diagram : arch.mermaid_diagram;
-
   if (!code) return;
 
-  let cleanDiagram = code.trim();
-  cleanDiagram = cleanDiagram.replace(/^```mermaid\s*/i, '').replace(/```$/i, '').trim();
+  let clean = code.trim().replace(/^```mermaid\s*/i, '').replace(/```$/i, '').trim();
 
   try {
-    const renderId = 'mermaid-main-' + Math.floor(Math.random() * 10000);
-    const { svg } = await mermaid.render(renderId, cleanDiagram);
+    const renderId = 'mermaid-render-' + Math.floor(Math.random() * 100000);
+    const { svg } = await mermaid.render(renderId, clean);
     elements.mermaidContainer.innerHTML = svg;
-  } catch (e) {
-    console.warn('Mermaid render issue:', e);
-    elements.mermaidContainer.innerHTML = `<pre class="text-xs text-slate-300 font-mono bg-dark-950 p-4 rounded-lg overflow-auto border border-dark-700 max-w-full">${cleanDiagram}</pre>`;
+  } catch (err) {
+    console.warn('Mermaid render warning:', err);
+    elements.mermaidContainer.innerHTML = `<pre class="text-xs text-charcoal-muted font-mono bg-sidebar p-4 rounded-lg overflow-auto border border-border max-w-full">${clean}</pre>`;
   }
 }
 
 // Diagram Mode Toggles
 elements.modeFlowBtn.addEventListener('click', async () => {
   state.diagramMode = 'flow';
-  elements.modeFlowBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition';
-  elements.modeSeqBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-white transition';
+  elements.modeFlowBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold bg-surface text-charcoal shadow-sm transition';
+  elements.modeSeqBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold text-charcoal-muted hover:text-charcoal transition';
   await renderActiveDiagram();
 });
 
 elements.modeSeqBtn.addEventListener('click', async () => {
   state.diagramMode = 'seq';
-  elements.modeSeqBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-600 text-white shadow-sm transition';
-  elements.modeFlowBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-white transition';
+  elements.modeSeqBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold bg-surface text-charcoal shadow-sm transition';
+  elements.modeFlowBtn.className = 'px-2.5 py-1 rounded-md text-[11px] font-semibold text-charcoal-muted hover:text-charcoal transition';
   await renderActiveDiagram();
 });
 
@@ -246,10 +273,9 @@ elements.modeSeqBtn.addEventListener('click', async () => {
 function renderFileTree() {
   if (!state.fileTree) return;
   elements.fileTreeContainer.innerHTML = '';
-
   let visibleCount = 0;
 
-  function buildNodeHtml(node, depth = 0) {
+  function buildNode(node, depth = 0) {
     const isMatchingModule = state.activeFilter === 'all' || node.module === state.activeFilter;
     const isMatchingSearch = !state.searchQuery || node.name.toLowerCase().includes(state.searchQuery.toLowerCase()) || node.path.toLowerCase().includes(state.searchQuery.toLowerCase());
 
@@ -258,25 +284,21 @@ function renderFileTree() {
       visibleCount++;
 
       const div = document.createElement('div');
-      div.className = `tree-node text-slate-300 hover:text-white ${state.activeFilePath === node.path ? 'active-file' : ''}`;
+      div.className = `tree-node ${state.activeFilePath === node.path ? 'active-file' : ''}`;
       div.style.paddingLeft = `${depth * 12 + 6}px`;
 
-      const moduleClass = getModuleColorClass(node.module);
-
       div.innerHTML = `
-        <span class="mr-1.5">${node.icon || '📄'}</span>
+        <span class="mr-1.5 opacity-70">📄</span>
         <span class="truncate flex-1">${node.name}</span>
-        <span class="module-badge ${moduleClass} ml-1">${node.module.split(' ')[0]}</span>
-        <span class="text-[10px] text-slate-500 ml-1 font-mono">${node.loc}L</span>
+        <span class="text-[10px] text-charcoal-light ml-1 font-mono">${node.loc}L</span>
       `;
 
       div.addEventListener('click', () => openFileInViewer(node.path));
       return div;
     } else {
-      // Directory
       const container = document.createElement('div');
       const header = document.createElement('div');
-      header.className = 'tree-node text-slate-400 font-semibold hover:text-slate-200';
+      header.className = 'tree-node font-semibold text-charcoal';
       header.style.paddingLeft = `${depth * 12 + 6}px`;
 
       const childrenContainer = document.createElement('div');
@@ -284,7 +306,7 @@ function renderFileTree() {
 
       let hasVisibleChild = false;
       (node.children || []).forEach((child) => {
-        const childEl = buildNodeHtml(child, depth + 1);
+        const childEl = buildNode(child, depth + 1);
         if (childEl) {
           hasVisibleChild = true;
           childrenContainer.appendChild(childEl);
@@ -294,10 +316,10 @@ function renderFileTree() {
       if (!hasVisibleChild && state.searchQuery) return null;
 
       header.innerHTML = `
-        <i data-lucide="chevron-down" class="w-3.5 h-3.5 mr-1 text-slate-500 transition-transform"></i>
-        <span class="mr-1.5">${node.icon || '📁'}</span>
+        <i data-lucide="chevron-down" class="w-3.5 h-3.5 mr-1 text-charcoal-light transition-transform"></i>
+        <span class="mr-1.5 opacity-70">📁</span>
         <span class="truncate flex-1">${node.name}</span>
-        <span class="text-[10px] text-slate-600 ml-1">${node.loc}L</span>
+        <span class="text-[10px] text-charcoal-light ml-1">${node.loc}L</span>
       `;
 
       let isOpen = true;
@@ -317,7 +339,7 @@ function renderFileTree() {
   }
 
   (state.fileTree.children || []).forEach((child) => {
-    const el = buildNodeHtml(child, 0);
+    const el = buildNode(child, 0);
     if (el) elements.fileTreeContainer.appendChild(el);
   });
 
@@ -325,26 +347,27 @@ function renderFileTree() {
   if (window.lucide) lucide.createIcons();
 }
 
-function getModuleColorClass(moduleName) {
-  switch (moduleName) {
-    case 'Auth & Security':
-      return 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
-    case 'Database & Models':
-      return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-    case 'API & Routes':
-      return 'bg-sky-500/20 text-sky-300 border border-sky-500/30';
-    case 'Frontend UI':
-      return 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
-    case 'Services & Utils':
-      return 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
-    case 'Tests':
-      return 'bg-rose-500/20 text-rose-300 border border-rose-500/30';
-    default:
-      return 'bg-slate-700/40 text-slate-400 border border-slate-700';
-  }
-}
+// Module Filters
+document.querySelectorAll('.mod-filter').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mod-filter').forEach((b) => {
+      b.classList.remove('active', 'bg-sage', 'text-white');
+      b.classList.add('bg-surface', 'text-charcoal-muted');
+    });
+    btn.classList.add('active', 'bg-sage', 'text-white');
+    btn.classList.remove('bg-surface', 'text-charcoal-muted');
+    state.activeFilter = btn.getAttribute('data-mod');
+    renderFileTree();
+  });
+});
 
-// Open File in Code Viewer (Globally attached to window)
+// Tree Search Filter
+elements.treeSearchInput.addEventListener('input', (e) => {
+  state.searchQuery = e.target.value.trim();
+  renderFileTree();
+});
+
+// Open File in Code Viewer
 async function openFileInViewer(filePath, startLine = null, endLine = null) {
   if (!state.repoId) return;
 
@@ -357,7 +380,6 @@ async function openFileInViewer(filePath, startLine = null, endLine = null) {
   elements.codeFileInfo.classList.remove('hidden');
 
   switchTab('code');
-
   elements.codeViewerBlock.textContent = '// Loading file content...';
 
   try {
@@ -365,11 +387,9 @@ async function openFileInViewer(filePath, startLine = null, endLine = null) {
     if (!res.ok) throw new Error('File not found');
 
     const data = await res.json();
-
     elements.codeLangBadge.textContent = data.language;
     elements.codeLineCount.textContent = `${data.loc} lines`;
 
-    // Map language to Prism class
     const langMap = {
       'Python': 'python',
       'TypeScript': 'typescript',
@@ -383,24 +403,22 @@ async function openFileInViewer(filePath, startLine = null, endLine = null) {
       'SQL': 'sql',
       'JSON': 'json',
       'YAML': 'yaml',
+      'HTML': 'html',
+      'CSS': 'css'
     };
 
     const prismClass = `language-${langMap[data.language] || 'clike'}`;
     elements.codeViewerBlock.className = prismClass;
     elements.codeViewerBlock.textContent = data.content;
-
     Prism.highlightElement(elements.codeViewerBlock);
 
-    // If specific lines targeted, scroll to line
     if (startLine) {
       setTimeout(() => {
-        const totalLines = data.loc || 1;
+        const total = data.loc || 1;
         const container = elements.codeViewerBlock.parentElement.parentElement;
-        const scrollFraction = Math.max(0, (startLine - 2) / totalLines);
-        container.scrollTop = scrollFraction * container.scrollHeight;
+        container.scrollTop = Math.max(0, ((startLine - 2) / total) * container.scrollHeight);
       }, 100);
     }
-
   } catch (err) {
     elements.codeViewerBlock.textContent = `// Error loading file: ${err.message}`;
   }
@@ -410,23 +428,33 @@ window.openFileInViewer = openFileInViewer;
 // Tab Switching
 function switchTab(tab) {
   if (tab === 'arch') {
-    elements.tabArchBtn.classList.add('active', 'text-indigo-400', 'bg-dark-800', 'border', 'border-dark-700');
-    elements.tabArchBtn.classList.remove('text-slate-400');
-    elements.tabCodeBtn.classList.remove('active', 'text-indigo-400', 'bg-dark-800', 'border', 'border-dark-700');
-    elements.tabCodeBtn.classList.add('text-slate-400');
+    elements.tabArchBtn.classList.add('active', 'text-sage', 'bg-sage-subtle', 'border-sage-border');
+    elements.tabArchBtn.classList.remove('text-charcoal-muted');
+    elements.tabCodeBtn.classList.remove('active', 'text-sage', 'bg-sage-subtle', 'border-sage-border');
+    elements.tabCodeBtn.classList.add('text-charcoal-muted');
 
     elements.tabArchView.classList.remove('hidden');
     elements.tabCodeView.classList.add('hidden');
   } else {
-    elements.tabCodeBtn.classList.add('active', 'text-indigo-400', 'bg-dark-800', 'border', 'border-dark-700');
-    elements.tabCodeBtn.classList.remove('text-slate-400');
-    elements.tabArchBtn.classList.remove('active', 'text-indigo-400', 'bg-dark-800', 'border', 'border-dark-700');
-    elements.tabArchBtn.classList.add('text-slate-400');
+    elements.tabCodeBtn.classList.add('active', 'text-sage', 'bg-sage-subtle', 'border-sage-border');
+    elements.tabCodeBtn.classList.remove('text-charcoal-muted');
+    elements.tabArchBtn.classList.remove('active', 'text-sage', 'bg-sage-subtle', 'border-sage-border');
+    elements.tabArchBtn.classList.add('text-charcoal-muted');
 
     elements.tabCodeView.classList.remove('hidden');
     elements.tabArchView.classList.add('hidden');
   }
 }
+elements.tabArchBtn.addEventListener('click', () => switchTab('arch'));
+elements.tabCodeBtn.addEventListener('click', () => switchTab('code'));
+
+// Copy Code Button
+elements.copyCodeBtn.addEventListener('click', () => {
+  const code = elements.codeViewerBlock.textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    showToast('Code copied to clipboard');
+  });
+});
 
 // Render Suggested Questions
 function renderSuggestedQuestions(questions) {
@@ -434,8 +462,8 @@ function renderSuggestedQuestions(questions) {
   elements.suggestedChips.innerHTML = '';
   questions.forEach((q) => {
     const btn = document.createElement('button');
-    btn.className = 'suggest-btn text-left text-xs bg-dark-800 hover:bg-dark-750 text-indigo-300 hover:text-indigo-200 p-1.5 rounded border border-dark-700 transition flex items-center space-x-1.5';
-    btn.innerHTML = `<i data-lucide="help-circle" class="w-3 h-3 text-indigo-400 shrink-0"></i><span>${q}</span>`;
+    btn.className = 'suggest-btn text-left text-xs bg-surface hover:bg-subtle text-charcoal p-1.5 rounded-lg border border-border transition flex items-center space-x-1.5';
+    btn.innerHTML = `<i data-lucide="help-circle" class="w-3.5 h-3.5 text-sage shrink-0"></i><span>${q}</span>`;
     btn.addEventListener('click', () => {
       elements.chatInput.value = q;
       submitChatMessage();
@@ -445,23 +473,50 @@ function renderSuggestedQuestions(questions) {
   if (window.lucide) lucide.createIcons();
 }
 
-// Chat Submissions
+// Chat Handlers
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'flex justify-end';
+  div.innerHTML = `
+    <div class="bg-sage text-white px-3 py-2 rounded-xl rounded-tr-none text-xs leading-relaxed max-w-[85%] shadow-sm">
+      ${text}
+    </div>
+  `;
+  elements.chatMessages.appendChild(div);
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+function addBotMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'flex items-start space-x-2';
+  div.innerHTML = `
+    <div class="w-6 h-6 rounded-md bg-sage text-white flex items-center justify-center shrink-0">
+      <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+    </div>
+    <div class="bg-surface border border-border rounded-xl rounded-tl-none p-3 text-charcoal leading-relaxed max-w-[88%] shadow-sm space-y-1">
+      <div class="markdown-body">${marked.parse(text)}</div>
+    </div>
+  `;
+  elements.chatMessages.appendChild(div);
+  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  if (window.lucide) lucide.createIcons();
+  return div;
+}
+
 async function submitChatMessage() {
   const query = elements.chatInput.value.trim();
   if (!query || state.isProcessing) return;
 
   if (!state.repoId) {
-    alert('Please ingest a repository first before asking questions.');
+    showToast('Please analyze a repository first.', 'error');
     return;
   }
 
-  // Add user message
   addUserMessage(query);
   elements.chatInput.value = '';
-  elements.retrievalStatus.textContent = '⚡ Searching codebase vectors...';
+  elements.retrievalStatus.textContent = 'Searching vectors...';
 
-  // Add temporary assistant placeholder
-  const botBubble = addBotMessage('Thinking and tracing codebase flow...');
+  const botBubble = addBotMessage('Tracing codebase context...');
 
   try {
     const res = await fetch('/api/chat/query', {
@@ -476,146 +531,53 @@ async function submitChatMessage() {
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || 'Failed to generate answer');
+      throw new Error(err.detail || 'Query failed');
     }
 
     const data = await res.json();
-
-    // Update Chat History
     state.chatHistory.push({ role: 'user', content: query });
     state.chatHistory.push({ role: 'assistant', content: data.answer });
 
-    // Format Markdown and replace file citations [path:start-end] with clickable links
-    let formattedAnswer = data.answer;
-    formattedAnswer = formattedAnswer.replace(/\[([a-zA-Z0-9_\-./\\]+):(\d+)-(\d+)\]/g, (match, rawPath, start, end) => {
+    // Format citations to clickable buttons
+    let formatted = data.answer;
+    formatted = formatted.replace(/\[([a-zA-Z0-9_\-./\\]+):(\d+)-(\d+)\]/g, (match, rawPath, start, end) => {
       const cleanPath = rawPath.replace(/\\/g, '/');
       return `<button class="citation-link" onclick="window.openFileInViewer('${cleanPath}', ${start}, ${end})"><i data-lucide="file-text" class="w-3 h-3"></i> ${cleanPath}:${start}-${end}</button>`;
     });
 
-    botBubble.querySelector('.markdown-body').innerHTML = marked.parse(formattedAnswer);
+    botBubble.querySelector('.markdown-body').innerHTML = marked.parse(formatted);
 
-    // Render any nested mermaid blocks in chat
+    // Render nested diagrams in chat
     const mermaidNodes = botBubble.querySelectorAll('.language-mermaid');
     for (const node of mermaidNodes) {
-      let code = node.textContent.trim();
-      code = code.replace(/^```mermaid\s*/i, '').replace(/```$/i, '').trim();
-      const container = document.createElement('div');
-      container.className = 'my-3 p-2 bg-dark-950/80 rounded border border-dark-700 flex justify-center';
+      const code = node.textContent.trim();
+      const mDiv = document.createElement('div');
+      mDiv.className = 'my-2 bg-sidebar p-2 rounded-lg border border-border';
+      const mId = 'chat-m-' + Math.floor(Math.random() * 100000);
       try {
-        const renderId = 'mermaid-chat-' + Math.floor(Math.random() * 10000);
-        const { svg } = await mermaid.render(renderId, code);
-        container.innerHTML = svg;
+        const { svg } = await mermaid.render(mId, code);
+        mDiv.innerHTML = svg;
       } catch (e) {
-        container.innerHTML = `<pre class="text-xs text-slate-300 font-mono">${code}</pre>`;
+        mDiv.innerHTML = `<pre class="text-[11px] font-mono text-charcoal-muted">${code}</pre>`;
       }
-      node.parentElement.replaceWith(container);
+      node.parentElement.replaceWith(mDiv);
     }
-
-    elements.retrievalStatus.textContent = `${data.citations?.length || 0} files cited (${data.provider})`;
-
   } catch (err) {
-    botBubble.querySelector('.markdown-body').innerHTML = `<p class="text-rose-400">❌ Error: ${err.message}</p>`;
-    elements.retrievalStatus.textContent = 'Error during query';
+    botBubble.querySelector('.markdown-body').innerHTML = `<p class="text-rose-600 font-medium">Error: ${err.message}</p>`;
   } finally {
+    elements.retrievalStatus.textContent = '';
     if (window.lucide) lucide.createIcons();
-    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
   }
 }
 
-function addUserMessage(text) {
-  const msg = document.createElement('div');
-  msg.className = 'flex items-start space-x-2.5 justify-end';
-  msg.innerHTML = `
-    <div class="bg-indigo-600 text-white rounded-xl rounded-tr-none p-3 text-xs leading-relaxed max-w-[85%] shadow-md">
-      ${text}
-    </div>
-    <div class="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shrink-0">
-      <i data-lucide="user" class="w-4 h-4 text-white"></i>
-    </div>
-  `;
-  elements.chatMessages.appendChild(msg);
-  if (window.lucide) lucide.createIcons();
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
-}
-
-function addBotMessage(text) {
-  const msg = document.createElement('div');
-  msg.className = 'flex items-start space-x-2.5';
-  msg.innerHTML = `
-    <div class="w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center shrink-0">
-      <i data-lucide="bot" class="w-4 h-4 text-indigo-400"></i>
-    </div>
-    <div class="bg-dark-800 border border-dark-700 rounded-xl rounded-tl-none p-3.5 text-slate-200 leading-relaxed max-w-[90%] space-y-2">
-      <div class="markdown-body">${marked.parse(text)}</div>
-    </div>
-  `;
-  elements.chatMessages.appendChild(msg);
-  if (window.lucide) lucide.createIcons();
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
-  return msg;
-}
-
-function showLoading(title, subtitle) {
-  elements.loadingTitle.textContent = title;
-  elements.loadingSubtitle.textContent = subtitle;
-  elements.loadingOverlay.classList.remove('hidden');
-}
-
-function hideLoading() {
-  elements.loadingOverlay.classList.add('hidden');
-}
-
-// Copy Code Button
-elements.copyCodeBtn.addEventListener('click', () => {
-  const code = elements.codeViewerBlock.textContent;
-  navigator.clipboard.writeText(code);
-  elements.copyCodeBtn.innerHTML = '<i data-lucide="check" class="w-3 h-3 text-emerald-400"></i><span class="text-emerald-400">Copied!</span>';
-  if (window.lucide) lucide.createIcons();
-  setTimeout(() => {
-    elements.copyCodeBtn.innerHTML = '<i data-lucide="copy" class="w-3 h-3"></i><span>Copy</span>';
-    if (window.lucide) lucide.createIcons();
-  }, 2000);
+// Clear Chat
+elements.clearChatBtn.addEventListener('click', () => {
+  elements.chatMessages.innerHTML = '';
+  state.chatHistory = [];
+  addBotMessage('Chat history cleared. What would you like to explore next?');
 });
 
-// Event Listeners
-elements.analyzeBtn.addEventListener('click', () => {
-  const url = elements.repoInput.value.trim();
-  if (!url) {
-    alert('Please enter a GitHub repository URL or choose a sample.');
-    return;
-  }
-  analyzeRepository({ repo_url: url });
-});
-
-elements.sampleSelect.addEventListener('change', (e) => {
-  const sampleKey = e.target.value;
-  if (sampleKey) {
-    analyzeRepository({ sample_key: sampleKey });
-    elements.sampleSelect.value = "";
-  }
-});
-
-elements.treeSearchInput.addEventListener('input', (e) => {
-  state.searchQuery = e.target.value;
-  renderFileTree();
-});
-
-document.querySelectorAll('.mod-filter').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.mod-filter').forEach((b) => {
-      b.classList.remove('active', 'bg-indigo-600', 'text-white');
-      b.classList.add('bg-dark-800', 'text-slate-400');
-    });
-    btn.classList.add('active', 'bg-indigo-600', 'text-white');
-    btn.classList.remove('bg-dark-800', 'text-slate-400');
-    state.activeFilter = btn.dataset.mod;
-    renderFileTree();
-  });
-});
-
-elements.tabArchBtn.addEventListener('click', () => switchTab('arch'));
-elements.tabCodeBtn.addEventListener('click', () => switchTab('code'));
-
+// Chat Form submit & Enter key
 elements.chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   submitChatMessage();
@@ -628,14 +590,45 @@ elements.chatInput.addEventListener('keydown', (e) => {
   }
 });
 
-elements.clearChatBtn.addEventListener('click', () => {
-  state.chatHistory = [];
-  elements.chatMessages.innerHTML = '';
-  addBotMessage('Conversation cleared. Ask a new question about the codebase!');
+// Ingest Submissions
+elements.heroAnalyzeBtn.addEventListener('click', () => {
+  const url = elements.heroRepoInput.value.trim();
+  if (!url) return showToast('Please enter a GitHub repository URL.', 'error');
+  analyzeRepository({ repo_url: url });
 });
 
-// Initialize on page load
+elements.heroRepoInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const url = elements.heroRepoInput.value.trim();
+    if (!url) return showToast('Please enter a GitHub repository URL.', 'error');
+    analyzeRepository({ repo_url: url });
+  }
+});
+
+elements.analyzeBtn.addEventListener('click', () => {
+  const url = elements.repoInput.value.trim();
+  if (!url) return showToast('Please enter a GitHub repository URL.', 'error');
+  analyzeRepository({ repo_url: url });
+});
+
+elements.repoInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const url = elements.repoInput.value.trim();
+    if (!url) return showToast('Please enter a GitHub repository URL.', 'error');
+    analyzeRepository({ repo_url: url });
+  }
+});
+
+// Sample buttons
+document.querySelectorAll('.sample-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const key = btn.getAttribute('data-key');
+    analyzeRepository({ sample_key: key });
+  });
+});
+
+// Initialization
 window.addEventListener('DOMContentLoaded', () => {
-  if (window.lucide) lucide.createIcons();
   checkSystemStatus();
+  if (window.lucide) lucide.createIcons();
 });

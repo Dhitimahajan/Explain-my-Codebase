@@ -103,16 +103,27 @@ def sanitize_repo_name(url_or_name: str) -> str:
     return clean or "unknown_repo"
 
 
+def validate_github_url(repo_url: str) -> str:
+    """Validates and normalizes GitHub repository URLs safely."""
+    raw = repo_url.strip()
+    if raw.startswith("-"):
+        raise ValueError("Invalid repository URL format.")
+    
+    # Allow shorthand 'owner/repo'
+    if re.match(r"^[a-zA-Z0-9_\-\.]+\/[a-zA-Z0-9_\-\.]+$", raw):
+        return f"https://github.com/{raw}"
+
+    parsed = re.match(r"^https?:\/\/(?:www\.)?github\.com\/([a-zA-Z0-9_\-\.]+)\/([a-zA-Z0-9_\-\.]+?)(?:\.git|\/)?$", raw)
+    if not parsed:
+        raise ValueError("Please provide a valid public GitHub URL (e.g., https://github.com/owner/repository).")
+
+    owner, repo = parsed.group(1), parsed.group(2)
+    return f"https://github.com/{owner}/{repo}"
+
+
 def clone_github_repo(repo_url: str) -> Path:
     """Clones a GitHub repository shallowly and quickly (--depth 1, --no-tags)."""
-    clean_url = repo_url.strip().rstrip("/")
-    if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
-        if "/" in clean_url and not clean_url.startswith("github.com/"):
-            clean_url = f"https://github.com/{clean_url}"
-        elif clean_url.startswith("github.com/"):
-            clean_url = f"https://{clean_url}"
-        else:
-            raise ValueError(f"Invalid GitHub repository URL: {repo_url}")
+    clean_url = validate_github_url(repo_url)
 
     repo_id = sanitize_repo_name(clean_url)
     target_dir = REPOS_DIR / repo_id

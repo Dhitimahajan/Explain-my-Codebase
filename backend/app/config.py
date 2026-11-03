@@ -13,8 +13,19 @@ if env_path.exists():
 else:
     load_dotenv()
 
-# Storage paths
-REPOS_DIR = BASE_DIR / "data" / "repos"
+# Storage paths: support local execution and serverless environments (e.g. Vercel)
+IS_VERCEL = bool(os.getenv("VERCEL"))
+if IS_VERCEL:
+    import tempfile
+    REPOS_DIR = Path(tempfile.gettempdir()) / "explain_codebase" / "repos"
+else:
+    try:
+        REPOS_DIR = BASE_DIR / "data" / "repos"
+        REPOS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        import tempfile
+        REPOS_DIR = Path(tempfile.gettempdir()) / "explain_codebase" / "repos"
+
 REPOS_DIR.mkdir(parents=True, exist_ok=True)
 
 # API Keys

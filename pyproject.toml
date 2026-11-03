@@ -1,0 +1,30 @@
+[project]
+name = "explain-my-codebase"
+version = "1.0.0"
+description = "AI-Powered GitHub Repository Architecture Visualizer & Interactive Codebase Copilot"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "pydantic>=2.6.0",
+    "python-dotenv>=1.0.1",
+    "gitpython>=3.1.42",
+    "anthropic>=0.20.0",
+    "openai>=1.14.0",
+    "aiofiles>=23.2.1",
+    "requests>=2.31.0",
+    "numpy>=1.26.0",
+    "tiktoken>=0.6.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+
+[tool.vercel]
+entrypoint = "backend.app.main"
