@@ -2,13 +2,13 @@ import re
 from typing import Dict, List, Any, Optional
 
 MODULE_PATTERNS = [
+    ("Tests", r"(^tests?\/|\/tests?\/|^__tests__\/|\/test_[^\/]+$|\/_test\.[^\/]+$|\.test\.[^\/]+$|\.spec\.[^\/]+$|cypress|playwright|jest|unittest)"),
+    ("Config & DevOps", r"(docker|compose|ci|cd|github\/workflows|k8s|kubernetes|terraform|dockerfile|\.env\.|\.ya?ml$|\.toml$)"),
+    ("Frontend UI", r"(frontend|ui|components?|pages?|views?|templates?|layouts?|hooks?|styles?|public|assets|client|\.tsx?$|\.jsx?$|\.vue$|\.svelte$|\.html$|\.s?css$)"),
     ("Auth & Security", r"(auth|jwt|token|session|oauth|passport|security|permission|guard|login|signup|password|crypto)"),
     ("Database & Models", r"(db|database|models?|schemas?|entities|migrations?|prisma|alembic|seeds?|repositor(y|ies)|sql|orm|query)"),
-    ("API & Routes", r"(api|routes?|routers?|controllers?|endpoints?|handlers?|views?|trpc|graphql)"),
-    ("Frontend UI", r"(frontend|ui|components?|pages?|views?|templates?|layouts?|hooks?|styles?|public|assets|src/app|client)"),
+    ("API & Routes", r"(api|routes?|routers?|controllers?|endpoints?|handlers?|trpc|graphql)"),
     ("Services & Utils", r"(services?|utils?|helpers?|lib|clients?|integrations?|workers?|jobs?|tasks?|adapters?|middleware)"),
-    ("Tests", r"(tests?|specs?|__tests__|__mocks__|cypress|e2e|playwright|jest)"),
-    ("Config & DevOps", r"(docker|compose|ci|cd|github/workflows|k8s|kubernetes|terraform|config|settings|env|webpack|vite|rollup|tsconfig)"),
 ]
 
 MODULE_ICONS = {
@@ -27,7 +27,7 @@ def classify_module(path: str, file_name: str = "") -> str:
     """Classifies a file or folder into an architectural category."""
     lower_path = path.lower().replace("\\", "/")
     lower_name = file_name.lower()
-    full_search = f"{lower_path}/{lower_name}"
+    full_search = f"{lower_path}/{lower_name}" if lower_name else lower_path
 
     for category, pattern in MODULE_PATTERNS:
         if re.search(pattern, full_search):
@@ -63,17 +63,7 @@ def build_file_tree(code_files: List[Dict[str, Any]]) -> Dict[str, Any]:
 
             if is_file:
                 module = classify_module(file["path"], file["name"])
-                icon = "📄"
-                if module == "Auth & Security":
-                    icon = "🔐"
-                elif module == "Database & Models":
-                    icon = "🗄️"
-                elif module == "API & Routes":
-                    icon = "🔌"
-                elif module == "Frontend UI":
-                    icon = "🎨"
-                elif module == "Tests":
-                    icon = "🧪"
+                icon = MODULE_ICONS.get(module, "📄")
 
                 current["children"][part] = {
                     "id": accum_path,

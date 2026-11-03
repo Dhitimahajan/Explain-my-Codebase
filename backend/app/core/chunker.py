@@ -57,15 +57,22 @@ def chunk_code_file(
     if total_lines == 0:
         return []
 
-    # If small file, return single chunk
+    # If small file, return single chunk with symbol detection
     if total_lines <= max_lines_per_chunk + 20:
+        small_sym = ""
+        for line in lines[:20]:
+            s = detect_symbol(line)
+            if s:
+                small_sym = s
+                break
+
         return [{
             "chunk_id": f"{file_path}:1-{total_lines}",
             "file_path": file_path,
             "language": language,
             "start_line": 1,
             "end_line": total_lines,
-            "symbol": detect_symbol(lines[0]) if lines else "",
+            "symbol": small_sym or "Module",
             "content": content,
             "preview": f"{file_path}:1-{total_lines}",
         }]

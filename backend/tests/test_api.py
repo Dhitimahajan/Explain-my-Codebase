@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
@@ -65,7 +65,7 @@ def test_local_path_ingest_and_chat():
 
     # Test path traversal prevention
     bad_res = client.get(f"/api/repo/{repo_id}/file?path=../../../../etc/passwd")
-    assert bad_res.status_code == 404
+    assert bad_res.status_code in (400, 404)
 
     # Test AI Chat query endpoint
     chat_res = client.post("/api/chat/query", json={

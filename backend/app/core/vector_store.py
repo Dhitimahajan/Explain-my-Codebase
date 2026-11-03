@@ -85,6 +85,9 @@ class CodeVectorStore:
     def _bm25_search(self, query: str, top_k: int = 15) -> List[tuple]:
         """Calculates BM25 scores for query."""
         query_tokens = self.tokenize(query)
+        if not query_tokens:
+            return []
+
         scores = []
         k1 = 1.5
         b = 0.75
@@ -109,9 +112,13 @@ class CodeVectorStore:
         if self.chunk_embeddings is None or len(self.chunks) == 0:
             return []
 
+        query_tokens = self.tokenize(query)
+        if not query_tokens:
+            return []
+
         dim = max(1, len(self.vocab))
         query_vec = np.zeros(dim, dtype=np.float32)
-        for t in self.tokenize(query):
+        for t in query_tokens:
             if t in self.vocab:
                 query_vec[self.vocab[t]] += self.idf.get(t, 1.0)
         
@@ -127,11 +134,12 @@ class CodeVectorStore:
         """
         Performs hybrid retrieval using Reciprocal Rank Fusion (RRF).
         """
-        if not self.chunks:
+        if not self.chunks or not query or not query.strip():
             return []
 
-        bm25_results = self._bm25_search(query, top_k=15)
-        dense_results = self._dense_search(query, top_k=15)
+        safe_top_k = max(1, top_k)
+        bm25_results = self._bm25_search(query, top_k=safe_top_k * 2)
+        dense_results = self._dense_search(query, top_k=safe_top_k * 2)
 
         rrf_scores: Dict[int, float] = {}
 
@@ -141,7 +149,7 @@ class CodeVectorStore:
         for rank, (doc_idx, _) in enumerate(dense_results):
             rrf_scores[doc_idx] = rrf_scores.get(doc_idx, 0.0) + (1.0 / (60.0 + rank + 1.0))
 
-        sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:safe_top_k]
 
         results = []
         for doc_idx, score in sorted_docs:
@@ -154,11 +162,17 @@ class CodeVectorStore:
         return results
 
 
-# In-memory registry of active repo vector stores
+# In-memory registry of active repo vector stores with bounded size for serverless
 VECTOR_STORES: Dict[str, CodeVectorStore] = {}
+MAX_CACHED_STORES = 25
 
 
 def get_or_create_vector_store(repo_id: str) -> CodeVectorStore:
+    global VECTOR_STORES
     if repo_id not in VECTOR_STORES:
+        if len(VECTOR_STORES) >= MAX_CACHED_STORES:
+            # Pop oldest entry to prevent memory exhaustion in serverless containers
+            oldest_key = next(iter(VECTOR_STORES))
+            del VECTOR_STORES[oldest_key]
         VECTOR_STORES[repo_id] = CodeVectorStore(repo_id)
     return VECTOR_STORES[repo_id]

@@ -15,6 +15,12 @@ except ImportError:
 from app.config import ANTHROPIC_API_KEY, OPENAI_API_KEY
 
 
+def sanitize_mermaid_label(text: str) -> str:
+    """Removes or replaces characters that break Mermaid diagram parsers."""
+    clean = re.sub(r'["\'`\[\](){}<>]', '', text).strip()
+    return clean or "Node"
+
+
 class LLMService:
     """
     Advanced Architecture Synthesizer and Codebase Copilot.
@@ -78,11 +84,10 @@ class LLMService:
             popup_files = [f["path"] for f in all_files if "popup" in f["path"].lower()]
             bg_files = [f["path"] for f in all_files if "background" in f["path"].lower() or "service_worker" in f["path"].lower()]
             content_files = [f["path"] for f in all_files if "content" in f["path"].lower()]
-            option_files = [f["path"] for f in all_files if "option" in f["path"].lower() or "setting" in f["path"].lower()]
 
-            p_node = popup_files[0] if popup_files else "popup.html / popup.js"
-            bg_node = bg_files[0] if bg_files else "background.js (Service Worker)"
-            c_node = content_files[0] if content_files else "content.js (DOM Script)"
+            p_node = sanitize_mermaid_label(popup_files[0] if popup_files else "popup.html")
+            bg_node = sanitize_mermaid_label(bg_files[0] if bg_files else "background.js")
+            c_node = sanitize_mermaid_label(content_files[0] if content_files else "content.js")
 
             flowchart = f"""graph TD
     subgraph BrowserUI ["🖥️ Browser & Tab Layer"]
@@ -93,22 +98,12 @@ class LLMService:
     subgraph Runtime ["⚙️ Extension Background Core"]
         Popup -->|chrome.runtime.sendMessage| Background["⚡ Background Service Worker<br/><code>{bg_node}</code>"]
         Content -->|DOM Events & Extraction| Background
-        Background <--> Storage[("💾 chrome.storage<br/>(Local & Sync Cache)")]
+        Background <--> Storage[("💾 chrome.storage<br/>Local & Sync Cache")]
     end
 
     subgraph External ["☁️ External Network Layer"]
-        Background -.->|fetch API / Webhooks| ExtAPI["🌐 Remote APIs / Backend Services"]
+        Background -.->|fetch API / Webhooks| ExtAPI["🌐 Remote APIs / Services"]
     end
-
-    classDef ui fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#e0e7ff;
-    classDef core fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#dcfce7;
-    classDef ext fill:#3b0764,stroke:#a855f7,stroke-width:2px,color:#f3e8ff;
-    classDef store fill:#78350f,stroke:#f59e0b,stroke-width:2px,color:#fef3c7;
-
-    class Popup,PageDOM,Content ui;
-    class Background core;
-    class Storage store;
-    class ExtAPI ext;
 """
 
             sequence = f"""sequenceDiagram
@@ -122,7 +117,7 @@ class LLMService:
 
     User->>Popup: Open Extension / Trigger Action
     Popup->>BG: chrome.runtime.sendMessage(action)
-    BG->>Storage: Read Cached Preferences / Tokens
+    BG->>Storage: Read Cached Preferences / State
     Storage-->>BG: Return Cached State
     BG->>Content: chrome.tabs.sendMessage(tabId, payload)
     Content->>DOM: Query & Modify Target Elements
@@ -136,100 +131,85 @@ class LLMService:
                 "title": f"{repo_name} — Chrome Extension Architecture",
                 "pattern": "Chrome Extension (Manifest V3 Architecture)",
                 "summary": (
-                    f"**{repo_name}** is built as a modular **Browser Extension** comprising a Popup UI layer, "
+                    f"**{repo_name}** is engineered as a modular **Browser Extension** with a Popup UI, "
                     f"Background Service Worker orchestrator, and Content Script DOM injectors. "
-                    f"Components communicate asynchronously via the `chrome.runtime` and `chrome.tabs` messaging bus."
+                    f"Components communicate asynchronously via browser messaging."
                 ),
                 "tech_stack": list(set(tech_stack)),
                 "key_layers": [
                     {"layer": "Popup UI Layer", "description": f"User interface rendering extension views. Core files: {', '.join(popup_files[:3]) or 'popup.html'}"},
                     {"layer": "Background Service Worker", "description": f"Event listener and lifecycle orchestrator. Core files: {', '.join(bg_files[:2]) or 'background.js'}"},
-                    {"layer": "Content Scripts", "description": f"Isolated scripts running directly inside web pages to extract or alter DOM. Core files: {', '.join(content_files[:2]) or 'content.js'}"},
-                    {"layer": "Storage & Chrome APIs", "description": "Persistent key-value cache utilizing chrome.storage and browser permission APIs."}
+                    {"layer": "Content Scripts", "description": f"Isolated scripts running directly inside web pages. Core files: {', '.join(content_files[:2]) or 'content.js'}"},
+                    {"layer": "Storage & Chrome APIs", "description": "Persistent key-value cache utilizing chrome.storage and browser permissions."}
                 ],
                 "mermaid_diagram": flowchart,
                 "sequence_diagram": sequence,
             }
 
         # Archetype 2: Dynamic Layered Architecture (FastAPI, Express, Django, Fullstack, or General)
-        # Extract top files from each detected module
-        module_subgraphs = []
-        class_assignments = []
-        connections = []
-
-        color_map = {
-            "Frontend UI": ("#1e1b4b", "#6366f1", "ui"),
-            "API & Routes": ("#083344", "#06b6d4", "api"),
-            "Auth & Security": ("#451a03", "#f59e0b", "auth"),
-            "Database & Models": ("#064e3b", "#10b981", "db"),
-            "Services & Utils": ("#3b0764", "#a855f7", "serv"),
-            "Config & DevOps": ("#334155", "#64748b", "conf"),
-            "General / Core": ("#182030", "#475569", "core"),
-        }
-
-        # Identify existing layers
         active_modules = [m for m, files in modules.items() if files and m != "Tests"]
+        if not active_modules:
+            active_modules = [m for m, files in modules.items() if files]
 
+        module_subgraphs = []
         for idx, mod_name in enumerate(active_modules):
-            files = modules[mod_name][:4]  # top 4 files
+            files = modules[mod_name][:4]
             clean_mod_id = f"mod_{idx}"
             file_nodes = []
             for f_idx, f in enumerate(files):
                 node_id = f"f_{idx}_{f_idx}"
-                clean_name = f["name"].replace('"', '')
+                clean_name = sanitize_mermaid_label(f["name"])
                 loc = f["loc"]
                 file_nodes.append(f'        {node_id}["📄 {clean_name}<br/><code>{loc} LOC</code>"]')
 
             nodes_str = "\n".join(file_nodes)
-            module_subgraphs.append(f"""    subgraph {clean_mod_id} ["{mod_name} ({len(modules[mod_name])} files)"]
+            module_subgraphs.append(f"""    subgraph {clean_mod_id} ["{sanitize_mermaid_label(mod_name)} ({len(modules[mod_name])} files)"]
 {nodes_str}
     end""")
 
-        # Add logical connections between subgraphs
-        has_ui = "Frontend UI" in modules and modules["Frontend UI"]
-        has_api = "API & Routes" in modules and modules["API & Routes"]
-        has_auth = "Auth & Security" in modules and modules["Auth & Security"]
-        has_serv = "Services & Utils" in modules and modules["Services & Utils"]
-        has_db = "Database & Models" in modules and modules["Database & Models"]
+        has_ui = "Frontend UI" in active_modules
+        has_api = "API & Routes" in active_modules
+        has_auth = "Auth & Security" in active_modules
+        has_serv = "Services & Utils" in active_modules
+        has_db = "Database & Models" in active_modules
 
-        flowchart_lines = ["graph TD", "    Client([\"🌐 Client / External Request\"])"]
+        ui_idx = active_modules.index("Frontend UI") if has_ui else -1
+        api_idx = active_modules.index("API & Routes") if has_api else -1
+        auth_idx = active_modules.index("Auth & Security") if has_auth else -1
+        serv_idx = active_modules.index("Services & Utils") if has_serv else -1
+        db_idx = active_modules.index("Database & Models") if has_db else -1
+
+        flowchart_lines = ["graph TD", '    Client(["🌐 Client / External Request"])']
 
         if has_ui:
-            flowchart_lines.append("    Client --> f_0_0")
+            flowchart_lines.append(f"    Client --> f_{ui_idx}_0")
             if has_api:
-                api_idx = active_modules.index("API & Routes") if "API & Routes" in active_modules else 0
-                flowchart_lines.append(f"    f_0_0 -->|API Request| f_{api_idx}_0")
+                flowchart_lines.append(f"    f_{ui_idx}_0 -->|API Request| f_{api_idx}_0")
         elif has_api:
-            api_idx = active_modules.index("API & Routes")
             flowchart_lines.append(f"    Client -->|HTTP / JSON| f_{api_idx}_0")
+        elif active_modules:
+            flowchart_lines.append("    Client --> f_0_0")
 
         if has_auth and has_api:
-            auth_idx = active_modules.index("Auth & Security")
-            api_idx = active_modules.index("API & Routes")
-            flowchart_lines.append(f"    f_{api_idx}_0 -->|Verify Token / Session| f_{auth_idx}_0")
+            flowchart_lines.append(f"    f_{api_idx}_0 -->|Verify Auth| f_{auth_idx}_0")
 
         if has_serv and has_api:
-            api_idx = active_modules.index("API & Routes")
-            serv_idx = active_modules.index("Services & Utils")
-            flowchart_lines.append(f"    f_{api_idx}_0 -->|Dispatch Handler| f_{serv_idx}_0")
+            flowchart_lines.append(f"    f_{api_idx}_0 -->|Execute Service| f_{serv_idx}_0")
 
         if has_db:
-            db_idx = active_modules.index("Database & Models")
             if has_serv:
-                serv_idx = active_modules.index("Services & Utils")
-                flowchart_lines.append(f"    f_{serv_idx}_0 -->|Query / Mutate| f_{db_idx}_0")
+                flowchart_lines.append(f"    f_{serv_idx}_0 -->|Database Query| f_{db_idx}_0")
             elif has_api:
-                api_idx = active_modules.index("API & Routes")
-                flowchart_lines.append(f"    f_{api_idx}_0 -->|ORM / SQL Query| f_{db_idx}_0")
+                flowchart_lines.append(f"    f_{api_idx}_0 -->|ORM / SQL| f_{db_idx}_0")
 
         flowchart_body = "\n\n".join(module_subgraphs)
         full_flowchart = f"{chr(10).join(flowchart_lines)}\n\n{flowchart_body}\n"
 
         # Build Sequence Trace
-        first_api_file = modules.get("API & Routes", [{}])[0].get("name", "Router")
-        first_auth_file = modules.get("Auth & Security", [{}])[0].get("name", "AuthGuard")
-        first_serv_file = modules.get("Services & Utils", [{}])[0].get("name", "ServiceLogic")
-        first_db_file = modules.get("Database & Models", [{}])[0].get("name", "DatabaseModel")
+        first_api_file = sanitize_mermaid_label(modules.get("API & Routes", [{}])[0].get("name", "Router"))
+        first_auth_file = sanitize_mermaid_label(modules.get("Auth & Security", [{}])[0].get("name", "AuthGuard"))
+        first_serv_file = sanitize_mermaid_label(modules.get("Services & Utils", [{}])[0].get("name", "ServiceLogic"))
+        first_db_file = sanitize_mermaid_label(modules.get("Database & Models", [{}])[0].get("name", "DatabaseModel"))
 
         sequence = f"""sequenceDiagram
     autonumber
@@ -254,7 +234,7 @@ class LLMService:
     end
 """
 
-        arch_pattern = "Layered Clean Architecture"
+        arch_pattern = "Layered Architecture"
         if is_fastapi:
             arch_pattern = "FastAPI Asynchronous Microservice"
             tech_stack.append("FastAPI")
@@ -385,8 +365,8 @@ Formatting Rules:
 
         top_chunk = retrieved_chunks[0]
         files_mentioned = list(dict.fromkeys([c["file_path"] for c in retrieved_chunks]))
-        top_filename = top_chunk['file_path'].split('/')[-1]
-        second_filename = files_mentioned[1].split('/')[-1] if len(files_mentioned) > 1 else "Handler"
+        top_filename = sanitize_mermaid_label(top_chunk['file_path'].split('/')[-1])
+        second_filename = sanitize_mermaid_label(files_mentioned[1].split('/')[-1] if len(files_mentioned) > 1 else "Handler")
 
         file_bullets = []
         for f in files_mentioned[:4]:
@@ -421,7 +401,7 @@ sequenceDiagram
     participant Handler as 📄 {top_filename}
     participant Core as ⚙️ {second_filename}
     
-    Client->>Handler: Trigger operation ("{query}")
+    Client->>Handler: Trigger operation ("{sanitize_mermaid_label(query)}")
     Handler->>Core: Forward context & dispatch logic
     Core-->>Handler: Return execution response
     Handler-->>Client: Final result & status

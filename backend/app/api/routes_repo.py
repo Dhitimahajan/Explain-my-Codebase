@@ -150,6 +150,8 @@ async def ingest_repository(payload: IngestRequest):
 
     except HTTPException:
         raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process repository: {str(e)}")
 
@@ -176,12 +178,15 @@ async def get_repo_architecture(repo_id: str):
 
 @router.get("/{repo_id}/file")
 async def get_file_content(repo_id: str, path: str = Query(..., description="Relative file path")):
-    """Returns file content for the in-app code viewer."""
+    """Returns file content for the in-app code viewer with traversal prevention."""
     if repo_id not in REPO_CACHE:
         raise HTTPException(status_code=404, detail="Repository not found.")
     
-    file_map = REPO_CACHE[repo_id]["files_by_path"]
     normalized_path = path.replace("\\", "/").strip("/")
+    if ".." in normalized_path.split("/") or normalized_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path.")
+
+    file_map = REPO_CACHE[repo_id]["files_by_path"]
     
     if normalized_path not in file_map:
         raise HTTPException(status_code=404, detail=f"File '{path}' not found in repository index.")
